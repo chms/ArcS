@@ -1,0 +1,19 @@
+{
+  "uuid": "595067df-ab40-41ee-9a0c-be500aa76b6a",
+  "shortName": "ArcS",
+  "longName": "ArcS",
+  "companyName": "chschmid.com",
+  "versionCode": 1,
+  "versionLabel": "1.0",
+  "sdkVersion": "3",
+  "targetPlatforms": ["aplite", "basalt"],
+  "watchapp": {
+    "watchface": true
+  },
+  "appKeys": {
+    "dummy": 0
+  },
+  "resources": {
+    "media": []
+  }
+}

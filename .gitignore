@@ -1,5 +1,9 @@
-# Build directory
+# Pebble build stuff
 build/
+.lock-waf_linux2_build
+
+# Temp files
+*~
 
 # Object files
 *.o
