@@ -4,7 +4,7 @@
   "longName": "ArcS",
   "companyName": "chschmid.com",
   "versionCode": 1,
-  "versionLabel": "1.0",
+  "versionLabel": "0.5",
   "sdkVersion": "3",
   "targetPlatforms": ["aplite", "basalt"],
   "watchapp": {
@@ -14,6 +14,12 @@
     "dummy": 0
   },
   "resources": {
-    "media": []
+    "media": [
+      {
+        "type": "png",
+        "name": "IMAGE_CS",
+        "file": "images/cs.png"
+      }
+    ]
   }
 }
