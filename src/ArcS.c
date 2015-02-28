@@ -1,3 +1,21 @@
+/* ArcS, yet another watchface based on arcs
+ * Copyright (C) 2015  Christian M. Schmid
+ * 
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+*/
+
 #include "pebble.h"
 
 #define MINUTE_CIRCLE_THICKNESS  4
@@ -7,9 +25,13 @@
 #define LOGO_WIDTH   78
 #define LOGO_HEIGHT  48
 
+#define DIGITAL_CLOCK_DURATION 5000
+#define HIDE_LOGO              true
+#define DIGITAL_ALWAYS_ON      true
+
 static Window *window;
-static GBitmap *bitmap_cs;
-static BitmapLayer *bitmap_layer_cs;
+static GBitmap *bitmap_logo;
+static BitmapLayer *bitmap_layer_logo;
 static Layer *layer_arcs;
 
 static TextLayer *text_layer_time;
@@ -17,6 +39,8 @@ static TextLayer *text_layer_date;
 
 static GRect window_bounds;
 static GPoint window_center;
+
+static bool digital_clock_is_visible;
 
 static int angle_90 = TRIG_MAX_ANGLE / 4;
 static int angle_180 = TRIG_MAX_ANGLE / 2;
@@ -137,64 +161,104 @@ static void graphics_draw_arc(GContext *ctx, GPoint center, int radius, int thic
 }
 
 static void updateCircles(Layer *layer, GContext *ctx) {
-        time_t now = time(NULL);
-        struct tm *t = localtime(&now);
-        int32_t hour_angle   = TRIG_MAX_ANGLE * (t->tm_hour%12)/12 + TRIG_MAX_ANGLE/12 * t->tm_min/60;
-        int32_t minute_angle = TRIG_MAX_ANGLE * t->tm_min/60;
-        //int32_t hour_angle   = TRIG_MAX_ANGLE-1;
-        //int32_t minute_angle = TRIG_MAX_ANGLE-1;
+    time_t now = time(NULL);
+    struct tm *tick_time = localtime(&now);
+    int32_t hour_angle   = TRIG_MAX_ANGLE * (tick_time->tm_hour%12)/12 + TRIG_MAX_ANGLE/12 * tick_time->tm_min/60;
+    int32_t minute_angle = TRIG_MAX_ANGLE * tick_time->tm_min/60;
+    //int32_t hour_angle   = TRIG_MAX_ANGLE-1;
+    //int32_t minute_angle = TRIG_MAX_ANGLE-1;
+    
+    graphics_draw_arc(ctx, window_center, window_center.x, HOUR_CIRCLE_THICKNESS, angle_270, hour_angle+angle_270, GColorWhite);
+    graphics_draw_arc(ctx, window_center, window_center.x-CIRCLE_SPACING_THICKNESS-HOUR_CIRCLE_THICKNESS, MINUTE_CIRCLE_THICKNESS, angle_270, minute_angle+angle_270, GColorWhite);
+}
 
-        graphics_draw_arc(ctx, window_center, window_center.x, HOUR_CIRCLE_THICKNESS, angle_270, hour_angle+angle_270, GColorWhite);
-        graphics_draw_arc(ctx, window_center, window_center.x-CIRCLE_SPACING_THICKNESS-HOUR_CIRCLE_THICKNESS, MINUTE_CIRCLE_THICKNESS, angle_270, minute_angle+angle_270, GColorWhite);
+static void update_digital_clock_t(struct tm *tick_time) {
+    static char s_time_text[] = "20:00";
+    static char s_date_text[] = "Xxx, 00.00.";
+    char *time_format;
+
+    if (clock_is_24h_style()) time_format = "%R";
+    else time_format = "%I:%M";
+
+    strftime(s_time_text, sizeof(s_time_text), time_format, tick_time);
+    strftime(s_date_text, sizeof(s_date_text), "%a, %e.%m.", tick_time);
+
+    text_layer_set_text(text_layer_time, s_time_text);
+    text_layer_set_text(text_layer_date, s_date_text);
+}
+
+static void update_digital_clock() {
+    time_t now = time(NULL);
+    struct tm *tick_time = localtime(&now);
+    update_digital_clock_t(tick_time);
 }
 
 static void handle_minute_tick(struct tm *tick_time, TimeUnits units_changed) {
-  layer_mark_dirty(window_get_root_layer(window));
+    update_digital_clock_t(tick_time);
+    layer_mark_dirty(layer_arcs);
+}
+
+static void show_digital_clock(bool show_digital_clock) {
+    digital_clock_is_visible = show_digital_clock || DIGITAL_ALWAYS_ON;
+    layer_set_hidden(bitmap_layer_get_layer(bitmap_layer_logo), digital_clock_is_visible || HIDE_LOGO);
+    layer_set_hidden(text_layer_get_layer(text_layer_time), !digital_clock_is_visible);
+    layer_set_hidden(text_layer_get_layer(text_layer_date), !digital_clock_is_visible);
+}
+
+static void tap_timer(void *data) {
+    show_digital_clock(false);
 }
 
 static void tapHandler(AccelAxisType axis, int32_t direction) {
-	/*if (step) return;	
-	timeHandler(NULL);*/
+    if(!digital_clock_is_visible) app_timer_register(DIGITAL_CLOCK_DURATION, tap_timer, NULL);
+    show_digital_clock(true);
 }
 
 static void window_load(Window *window) {
-  // Set window background to black and get window layer and dimensions
-  window_set_background_color(window, GColorBlack);
-  Layer *window_layer = window_get_root_layer(window);
-  window_bounds   = layer_get_bounds(window_layer);
-  window_center.x = window_bounds.size.w/2;
-  window_center.y = window_bounds.size.h/2;
+    // Set window background to black and get window layer and dimensions
+    window_set_background_color(window, GColorBlack);
+    Layer *window_layer = window_get_root_layer(window);
+    window_bounds   = layer_get_bounds(window_layer);
+    window_center.x = window_bounds.size.w/2;
+    window_center.y = window_bounds.size.h/2;
 
-  bitmap_cs = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_CS);
-  bitmap_layer_cs = bitmap_layer_create((GRect) { .origin = {window_center.x-LOGO_WIDTH/2, window_center.y-LOGO_HEIGHT/2}, .size = {LOGO_WIDTH, LOGO_HEIGHT } });
-  bitmap_layer_set_bitmap(bitmap_layer_cs, bitmap_cs);
+    // Create and style logo layer
+    bitmap_logo = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_CS);
+    bitmap_layer_logo = bitmap_layer_create((GRect) { .origin = {window_center.x-LOGO_WIDTH/2, window_center.y-LOGO_HEIGHT/2}, .size = {LOGO_WIDTH, LOGO_HEIGHT } });
+    bitmap_layer_set_bitmap(bitmap_layer_logo, bitmap_logo);  
 
-  text_layer_time = text_layer_create((GRect) { .origin = { 0, window_center.y-26}, .size = { window_bounds.size.w, 34 } });
-  text_layer_set_text(text_layer_time, "23:59");
-  text_layer_set_font(text_layer_time, fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS));
-  text_layer_set_text_alignment(text_layer_time, GTextAlignmentCenter);
-  text_layer_set_background_color(text_layer_time, GColorClear);
-  text_layer_set_text_color(text_layer_time, GColorWhite);
+    // Create and style digital time layer
+    text_layer_time = text_layer_create((GRect) { .origin = { 0, window_center.y-26}, .size = { window_bounds.size.w, 34 } });
+    text_layer_set_font(text_layer_time, fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS));
+    text_layer_set_text_alignment(text_layer_time, GTextAlignmentCenter);
+    text_layer_set_background_color(text_layer_time, GColorClear);
+    text_layer_set_text_color(text_layer_time, GColorWhite);
 
-  text_layer_date = text_layer_create((GRect) { .origin = { 0, window_center.y+11}, .size = { window_bounds.size.w, 34 } });
-  text_layer_set_text(text_layer_date, "Mon, 22.12.");
-  text_layer_set_font(text_layer_date, fonts_get_system_font(FONT_KEY_GOTHIC_18));
-  text_layer_set_text_alignment(text_layer_date, GTextAlignmentCenter);
-  text_layer_set_background_color(text_layer_date, GColorClear);
-  text_layer_set_text_color(text_layer_date, GColorWhite);
+    // Create and style digital date layer
+    text_layer_date = text_layer_create((GRect) { .origin = { 0, window_center.y+9}, .size = { window_bounds.size.w, 34 } });
+    text_layer_set_font(text_layer_date, fonts_get_system_font(FONT_KEY_GOTHIC_18));
+    text_layer_set_text_alignment(text_layer_date, GTextAlignmentCenter);
+    text_layer_set_background_color(text_layer_date, GColorClear);
+    text_layer_set_text_color(text_layer_date, GColorWhite);
 
-  layer_arcs = layer_create(window_bounds);
-  layer_set_update_proc(layer_arcs, updateCircles);
+    // Create and style arc (analog) layer
+    layer_arcs = layer_create(window_bounds);
+    layer_set_update_proc(layer_arcs, updateCircles);
+    
+    // Update time and date
+    update_digital_clock();
+    show_digital_clock(false);
 
-  layer_add_child(window_layer, bitmap_layer_get_layer(bitmap_layer_cs));
-  //layer_add_child(window_layer, text_layer_get_layer(text_layer_time));
-  //layer_add_child(window_layer, text_layer_get_layer(text_layer_date));
-  layer_add_child(window_layer, layer_arcs);
+    // Add layers to root layer
+    layer_add_child(window_layer, bitmap_layer_get_layer(bitmap_layer_logo));
+    layer_add_child(window_layer, text_layer_get_layer(text_layer_time));
+    layer_add_child(window_layer, text_layer_get_layer(text_layer_date));
+    layer_add_child(window_layer, layer_arcs);
 }
 
 static void window_unload(Window *window) {
-  bitmap_layer_destroy(bitmap_layer_cs);
-  gbitmap_destroy(bitmap_cs);
+  bitmap_layer_destroy(bitmap_layer_logo);
+  gbitmap_destroy(bitmap_logo);
   text_layer_destroy(text_layer_time);
   text_layer_destroy(text_layer_date);
   layer_destroy(layer_arcs);
