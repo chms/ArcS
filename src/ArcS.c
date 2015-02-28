@@ -4,13 +4,17 @@
 #define HOUR_CIRCLE_THICKNESS    8
 #define CIRCLE_SPACING_THICKNESS 6
 
+#define LOGO_WIDTH   78
+#define LOGO_HEIGHT  48
+
 static Window *window;
-static TextLayer *text_layer;
 static GBitmap *bitmap_cs;
 static BitmapLayer *bitmap_layer_cs;
 static Layer *layer_arcs;
 
-static TextLayer *text_layer;
+static TextLayer *text_layer_time;
+static TextLayer *text_layer_date;
+
 static GRect window_bounds;
 static GPoint window_center;
 
@@ -137,6 +141,8 @@ static void updateCircles(Layer *layer, GContext *ctx) {
         struct tm *t = localtime(&now);
         int32_t hour_angle   = TRIG_MAX_ANGLE * (t->tm_hour%12)/12 + TRIG_MAX_ANGLE/12 * t->tm_min/60;
         int32_t minute_angle = TRIG_MAX_ANGLE * t->tm_min/60;
+        //int32_t hour_angle   = TRIG_MAX_ANGLE-1;
+        //int32_t minute_angle = TRIG_MAX_ANGLE-1;
 
         graphics_draw_arc(ctx, window_center, window_center.x, HOUR_CIRCLE_THICKNESS, angle_270, hour_angle+angle_270, GColorWhite);
         graphics_draw_arc(ctx, window_center, window_center.x-CIRCLE_SPACING_THICKNESS-HOUR_CIRCLE_THICKNESS, MINUTE_CIRCLE_THICKNESS, angle_270, minute_angle+angle_270, GColorWhite);
@@ -160,25 +166,37 @@ static void window_load(Window *window) {
   window_center.y = window_bounds.size.h/2;
 
   bitmap_cs = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_CS);
-  bitmap_layer_cs = bitmap_layer_create(window_bounds);
+  bitmap_layer_cs = bitmap_layer_create((GRect) { .origin = {window_center.x-LOGO_WIDTH/2, window_center.y-LOGO_HEIGHT/2}, .size = {LOGO_WIDTH, LOGO_HEIGHT } });
   bitmap_layer_set_bitmap(bitmap_layer_cs, bitmap_cs);
 
-  text_layer = text_layer_create((GRect) { .origin = { 0, 72 }, .size = { window_bounds.size.w, 20 } });
-  text_layer_set_text(text_layer, "Press a button");
-  text_layer_set_text_alignment(text_layer, GTextAlignmentCenter);
-  text_layer_set_background_color(text_layer, GColorClear);
+  text_layer_time = text_layer_create((GRect) { .origin = { 0, window_center.y-26}, .size = { window_bounds.size.w, 34 } });
+  text_layer_set_text(text_layer_time, "23:59");
+  text_layer_set_font(text_layer_time, fonts_get_system_font(FONT_KEY_BITHAM_34_MEDIUM_NUMBERS));
+  text_layer_set_text_alignment(text_layer_time, GTextAlignmentCenter);
+  text_layer_set_background_color(text_layer_time, GColorClear);
+  text_layer_set_text_color(text_layer_time, GColorWhite);
+
+  text_layer_date = text_layer_create((GRect) { .origin = { 0, window_center.y+11}, .size = { window_bounds.size.w, 34 } });
+  text_layer_set_text(text_layer_date, "Mon, 22.12.");
+  text_layer_set_font(text_layer_date, fonts_get_system_font(FONT_KEY_GOTHIC_18));
+  text_layer_set_text_alignment(text_layer_date, GTextAlignmentCenter);
+  text_layer_set_background_color(text_layer_date, GColorClear);
+  text_layer_set_text_color(text_layer_date, GColorWhite);
 
   layer_arcs = layer_create(window_bounds);
   layer_set_update_proc(layer_arcs, updateCircles);
 
   layer_add_child(window_layer, bitmap_layer_get_layer(bitmap_layer_cs));
+  //layer_add_child(window_layer, text_layer_get_layer(text_layer_time));
+  //layer_add_child(window_layer, text_layer_get_layer(text_layer_date));
   layer_add_child(window_layer, layer_arcs);
 }
 
 static void window_unload(Window *window) {
   bitmap_layer_destroy(bitmap_layer_cs);
   gbitmap_destroy(bitmap_cs);
-  text_layer_destroy(text_layer);
+  text_layer_destroy(text_layer_time);
+  text_layer_destroy(text_layer_date);
   layer_destroy(layer_arcs);
 }
 
