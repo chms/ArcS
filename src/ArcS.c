@@ -32,7 +32,7 @@
 static Window *window;
 static GBitmap *bitmap_logo;
 static BitmapLayer *bitmap_layer_logo;
-static Layer *layer_arcs;
+static Layer *layer_arcs, *layer_battery_bluetooth;
 
 static TextLayer *text_layer_time;
 static TextLayer *text_layer_date;
@@ -160,7 +160,7 @@ static void graphics_draw_arc(GContext *ctx, GPoint center, int radius, int thic
   }
 }
 
-static void updateCircles(Layer *layer, GContext *ctx) {
+static void update_circles(Layer *layer, GContext *ctx) {
     time_t now = time(NULL);
     struct tm *tick_time = localtime(&now);
     int32_t hour_angle   = TRIG_MAX_ANGLE * (tick_time->tm_hour%12)/12 + TRIG_MAX_ANGLE/12 * tick_time->tm_min/60;
@@ -170,6 +170,36 @@ static void updateCircles(Layer *layer, GContext *ctx) {
     
     graphics_draw_arc(ctx, window_center, window_center.x, HOUR_CIRCLE_THICKNESS, angle_270, hour_angle+angle_270, GColorWhite);
     graphics_draw_arc(ctx, window_center, window_center.x-CIRCLE_SPACING_THICKNESS-HOUR_CIRCLE_THICKNESS, MINUTE_CIRCLE_THICKNESS, angle_270, minute_angle+angle_270, GColorWhite);
+}
+
+static void update_battery_bluetooth(Layer *layer, GContext *ctx) {
+    uint8_t shift_battery = 6;
+
+    graphics_context_set_stroke_color(ctx, GColorWhite);
+    if (bluetooth_connection_service_peek()) {
+        graphics_draw_line(ctx, GPoint(24,0), GPoint(24,12));
+        graphics_draw_line(ctx, GPoint(21,3), GPoint(27,9));
+        graphics_draw_line(ctx, GPoint(21,9), GPoint(27,3));
+        graphics_draw_line(ctx, GPoint(25,1), GPoint(26,2));
+        graphics_draw_line(ctx, GPoint(25,11), GPoint(26,10));
+        shift_battery = 0;
+    }
+    
+    graphics_draw_rect(ctx, GRect(0+shift_battery, 3, 14, 8));
+    graphics_draw_line(ctx, GPoint(14+shift_battery,5), GPoint(14+shift_battery,8));
+    
+    BatteryChargeState battery_state = battery_state_service_peek();
+    uint8_t charge_percent = battery_state.charge_percent + 10;
+    uint8_t x_bar = shift_battery + 2;
+    
+
+    // Fill battery bars
+    while(charge_percent > 15) {
+        graphics_draw_line(ctx, GPoint(x_bar,5), GPoint(x_bar, 8));
+        x_bar++;
+        charge_percent = charge_percent - 10;
+    }
+    
 }
 
 static void update_digital_clock_t(struct tm *tick_time) {
@@ -201,6 +231,7 @@ static void handle_minute_tick(struct tm *tick_time, TimeUnits units_changed) {
 static void show_digital_clock(bool show_digital_clock) {
     digital_clock_is_visible = show_digital_clock || DIGITAL_ALWAYS_ON;
     layer_set_hidden(bitmap_layer_get_layer(bitmap_layer_logo), digital_clock_is_visible || HIDE_LOGO);
+    layer_set_hidden(layer_battery_bluetooth, !digital_clock_is_visible);
     layer_set_hidden(text_layer_get_layer(text_layer_time), !digital_clock_is_visible);
     layer_set_hidden(text_layer_get_layer(text_layer_date), !digital_clock_is_visible);
 }
@@ -209,7 +240,7 @@ static void tap_timer(void *data) {
     show_digital_clock(false);
 }
 
-static void tapHandler(AccelAxisType axis, int32_t direction) {
+static void tap_handler(AccelAxisType axis, int32_t direction) {
     if(!digital_clock_is_visible) app_timer_register(DIGITAL_CLOCK_DURATION, tap_timer, NULL);
     show_digital_clock(true);
 }
@@ -243,7 +274,11 @@ static void window_load(Window *window) {
 
     // Create and style arc (analog) layer
     layer_arcs = layer_create(window_bounds);
-    layer_set_update_proc(layer_arcs, updateCircles);
+    layer_set_update_proc(layer_arcs, update_circles);
+
+    // Create and style battery layer
+    layer_battery_bluetooth = layer_create(GRect(58, 44, 28, 13));
+    //layer_set_update_proc(layer_battery_bluetooth, update_battery_bluetooth);
     
     // Update time and date
     update_digital_clock();
@@ -254,6 +289,7 @@ static void window_load(Window *window) {
     layer_add_child(window_layer, text_layer_get_layer(text_layer_time));
     layer_add_child(window_layer, text_layer_get_layer(text_layer_date));
     layer_add_child(window_layer, layer_arcs);
+    layer_add_child(window_layer, layer_battery_bluetooth);
 }
 
 static void window_unload(Window *window) {
@@ -262,6 +298,7 @@ static void window_unload(Window *window) {
   text_layer_destroy(text_layer_time);
   text_layer_destroy(text_layer_date);
   layer_destroy(layer_arcs);
+  layer_destroy(layer_battery_bluetooth);
 }
 
 static void init(void) {
@@ -278,10 +315,10 @@ static void init(void) {
   window_stack_push(window, true);
   
   // Add timer for minutes
-  tick_timer_service_subscribe(SECOND_UNIT, handle_minute_tick);
+  tick_timer_service_subscribe(MINUTE_UNIT, handle_minute_tick);
 
   // React to taps
-  accel_tap_service_subscribe(tapHandler);
+  accel_tap_service_subscribe(tap_handler);
 }
 
 static void deinit(void) {
